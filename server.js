@@ -5,51 +5,123 @@ const path = require('path');
 const cheerio = require('cheerio');
 const QRCode = require('qrcode');
 
+// --- FIREBASE IMPORT ---
+const { initializeApp } = require('firebase/app');
+const { getFirestore, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
-
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- DATENBANKEN (In-Memory) ---
-const pastes = {};
-const shortLinks = {};
+// ==========================================
+// DEINE FIREBASE DATEN (Sicher im Backend)
+// ==========================================
+const firebaseConfig = {
+    apiKey: "AIzaSyChyWkhBMP6kbAvkiHFJ36G_faHRI7Mbpg",
+    authDomain: "schleimy-download-portal.firebaseapp.com",
+    projectId: "schleimy-download-portal",
+    storageBucket: "schleimy-download-portal.firebasestorage.app",
+    messagingSenderId: "671408090473",
+    appId: "1:671408090473:web:6231e66e93f4c160d861f8",
+    measurementId: "G-W81SG1B28C"
+};
 
-// --- 1. PASTEBIN ---
-app.post('/api/paste', (req, res) => {
-    const { text, password, isBurn } = req.body;
-    if (!text) return res.status(400).json({ error: 'Kein Text' });
-    const id = uuidv4().slice(0, 8);
-    pastes[id] = { text, password: password || null, isBurn: !!isBurn };
-    res.json({ id });
+// Firebase initialisieren
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+console.log("[FIREBASE] Erfolgreich verbunden!");
+
+// --- 1. SECURE PASTEBIN ---
+app.post('/api/paste', async (req, res) => {
+    try {
+        const { text, password, isBurn } = req.body;
+        if (!text) return res.status(400).json({ error: 'Kein Text' });
+        
+        const id = uuidv4().slice(0, 8);
+        const pasteData = {
+            text: text,
+            password: password || null,
+            isBurn: !!isBurn,
+            createdAt: Date.now() // Zeitstempel für automatischen Ablauf
+        };
+        
+        // Speichert in der Firestore Collection 'pastes'
+        await setDoc(doc(db, "pastes", id), pasteData);
+        res.json({ id });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'DB Fehler beim Speichern' });
+    }
 });
 
-app.post('/api/paste/read', (req, res) => {
-    const { id, password } = req.body;
-    const paste = pastes[id];
-    
-    if (!paste) return res.status(404).json({ error: 'Paste nicht gefunden' });
-    if (paste.password && paste.password !== password) return res.status(403).json({ error: 'Falsches Passwort' });
+app.post('/api/paste/read', async (req, res) => {
+    try {
+        const { id, password } = req.body;
+        const pasteRef = doc(db, "pastes", id);
+        const pasteSnap = await getDoc(pasteRef);
+        
+        if (!pasteSnap.exists()) return res.status(404).json({ error: 'Paste nicht gefunden oder bereits zerstört.' });
+        
+        const paste = pasteSnap.data();
 
-    const text = paste.text;
-    if (paste.isBurn) delete pastes[id]; 
-    
-    res.json({ text });
+        // Check: Ist der Paste älter als 7 Tage? (604.800.000 Millisekunden)
+        if (Date.now() - paste.createdAt > 604800000) {
+            await deleteDoc(pasteRef);
+            return res.status(404).json({ error: 'Paste ist nach 7 Tagen abgelaufen und wurde gelöscht.' });
+        }
+        
+        // Passwort Check
+        if (paste.password && paste.password !== password) return res.status(403).json({ error: 'Falsches Passwort!' });
+
+        // Burn after reading -> Sofort löschen, NACHDEM das Passwort gestimmt hat
+        if (paste.isBurn) {
+            await deleteDoc(pasteRef);
+        }
+        
+        res.json({ text: paste.text });
+    } catch (error) {
+        res.status(500).json({ error: 'DB Fehler beim Lesen' });
+    }
 });
 
 // --- 2. URL SHORTENER ---
-app.post('/api/shorten', (req, res) => {
-    const { url } = req.body;
-    if (!url) return res.status(400).json({ error: 'Keine URL' });
-    const id = uuidv4().slice(0, 5);
-    shortLinks[id] = url;
-    res.json({ shortUrl: `/s/${id}` });
+app.post('/api/shorten', async (req, res) => {
+    try {
+        const { url } = req.body;
+        if (!url) return res.status(400).json({ error: 'Keine URL' });
+        
+        const id = uuidv4().slice(0, 5);
+        await setDoc(doc(db, "shortlinks", id), {
+            url: url,
+            createdAt: Date.now()
+        });
+        
+        res.json({ shortUrl: `/s/${id}` });
+    } catch (error) {
+        res.status(500).json({ error: 'DB Fehler beim Kürzen' });
+    }
 });
 
-app.get('/s/:id', (req, res) => {
-    const url = shortLinks[req.params.id];
-    if (url) res.redirect(url);
-    else res.status(404).send('Shortlink nicht gefunden');
+app.get('/s/:id', async (req, res) => {
+    try {
+        const linkRef = doc(db, "shortlinks", req.params.id);
+        const linkSnap = await getDoc(linkRef);
+        
+        if (!linkSnap.exists()) return res.status(404).send('Shortlink existiert nicht.');
+        
+        const link = linkSnap.data();
+
+        // Links verfallen nach 30 Tagen
+        if (Date.now() - link.createdAt > 2592000000) {
+            await deleteDoc(linkRef);
+            return res.status(404).send('Shortlink ist nach 30 Tagen abgelaufen.');
+        }
+
+        res.redirect(link.url);
+    } catch (error) {
+        res.status(500).send('Datenbank Fehler');
+    }
 });
 
 // --- 3. QR CODE GENERATOR ---
@@ -64,10 +136,7 @@ app.get('/api/qr', async (req, res) => {
     }
 });
 
-// --- 4. MEDIA DOWNLOADER ---
-// [Wartungsmodus] - Komplett aus dem Backend entfernt, um den Server zu schützen.
-
-// --- 5. SCRIBD TEXT SCRAPER ---
+// --- 4. SCRIBD TEXT SCRAPER ---
 app.get('/api/scribd', async (req, res) => {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'Scribd URL fehlt' });
@@ -76,8 +145,7 @@ app.get('/api/scribd', async (req, res) => {
         const response = await fetch(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-                'Referer': 'https://www.google.com/',
-                'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7'
+                'Referer': 'https://www.google.com/'
             }
         });
         
@@ -104,5 +172,5 @@ app.get('/api/scribd', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`[SCHLEIMY'S OMNITOOL] Server läuft auf Port ${PORT}`);
+    console.log(`[SCHLEIMY DOWNLOAD PORTAL] Server läuft auf Port ${PORT}`);
 });
