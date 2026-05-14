@@ -64,38 +64,62 @@ app.get('/api/qr', async (req, res) => {
     }
 });
 
-// --- 4. MEDIA DOWNLOADER (Der neue API-Tunnel für 0 Serverlast) ---
+// --- 4. MEDIA DOWNLOADER (Mit Fallback-System & v8 Support) ---
 app.post('/api/media', async (req, res) => {
     const { url, type, quality } = req.body;
     if (!url) return res.status(400).json({ error: 'Keine URL angegeben' });
 
-    try {
-        // Wir tunneln die Anfrage über DEINEN Server zur Cobalt API. 
-        // Das umgeht den CORS-Blocker im Browser.
-        const response = await fetch('https://api.cobalt.tools/api/json', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' // Täuscht einen normalen Browser vor
-            },
-            body: JSON.stringify({
-                url: url,
-                isAudioOnly: type === 'mp3',
-                vQuality: quality // z.B. "1080", "720", "max"
-            })
-        });
+    // Liste von kostenlosen, öffentlichen Community-Instanzen
+    const cobaltInstances = [
+        'https://co.wuk.sh/api/json',          // Beliebter v7 Server
+        'https://co.wuk.sh/',                  // Beliebter v8 Server
+        'https://cobalt.qewertyy.dev/api/json',// Backup 1
+        'https://api.cobalt.tools/'            // Offizieller v8 Server (falls er uns doch reinlässt)
+    ];
 
-        const data = await response.json();
-        
-        if (data.status === 'error') {
-            return res.status(400).json({ error: data.text });
+    let success = false;
+    let finalUrl = null;
+    let lastError = "Alle Download-Server sind aktuell überlastet.";
+
+    // Wir probieren die Server nacheinander durch, bis einer funktioniert
+    for (let apiUrl of cobaltInstances) {
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                // Wir schicken Parameter für v7 UND v8 gleichzeitig mit. Der Server nimmt sich, was er braucht.
+                body: JSON.stringify({
+                    url: url,
+                    isAudioOnly: type === 'mp3', // für v7 Server
+                    vQuality: quality,           // für v7 Server
+                    downloadMode: type === 'mp3' ? 'audio' : 'auto', // für v8 Server
+                    videoQuality: quality === 'max' ? 'max' : quality // für v8 Server
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.url) {
+                finalUrl = data.url;
+                success = true;
+                break; // Erfolgreich! Wir stoppen die Schleife
+            } else if (data.status === 'error' || data.error) {
+                lastError = data.text || data.error || "Unbekannter API Fehler";
+                // Wir werfen keinen direkten Fehler zum Nutzer, sondern lassen die Schleife den nächsten Server probieren!
+            }
+        } catch (error) {
+            continue; // Bei Verbindungsabbruch direkt den nächsten Server probieren
         }
-        
-        // Wir schicken dem Nutzer nur den finalen Link. Der Download läuft über Cobalt!
-        res.json({ url: data.url }); 
-    } catch (error) {
-        res.status(500).json({ error: 'Verbindung zur Download-API fehlgeschlagen.' });
+    }
+
+    if (success && finalUrl) {
+        res.json({ url: finalUrl });
+    } else {
+        res.status(500).json({ error: lastError });
     }
 });
 
