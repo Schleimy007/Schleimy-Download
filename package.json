@@ -1,7 +1,7 @@
 {
   "name": "schleimys-omnitool",
-  "version": "4.1.0",
-  "description": "The Ultimate Downloader, Pastebin & Scraper (0€ Cloud Edition)",
+  "version": "5.1.0",
+  "description": "The Ultimate Downloader (Media Offline Edition)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

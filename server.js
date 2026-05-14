@@ -65,7 +65,7 @@ app.get('/api/qr', async (req, res) => {
 });
 
 // --- 4. MEDIA DOWNLOADER ---
-// Entfernt! Läuft jetzt zu 100% über den Browser des Nutzers (Frontend).
+// [Wartungsmodus] - Komplett aus dem Backend entfernt, um den Server zu schützen.
 
 // --- 5. SCRIBD TEXT SCRAPER ---
 app.get('/api/scribd', async (req, res) => {
