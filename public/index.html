@@ -2,7 +2,7 @@
 <html lang="de" data-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <title>Schleimy's Omnitool</title>
+    <title>Schleimy Downloads tool</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <style>
         :root[data-theme="dark"] { --bg: #0f0f0f; --surface: #1a1a1a; --text: #f3f4f6; --border: #334155; --primary: #3b82f6; }
@@ -13,7 +13,7 @@
         h2 { border-left: 4px solid var(--primary); padding-left: 10px; margin-top: 0; }
         
         input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box;}
-        button { background: var(--primary); color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;}
+        button { background: var(--primary); color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; transition: opacity 0.2s;}
         button:hover { opacity: 0.8; }
         button:disabled { background: #555; cursor: not-allowed; }
         
@@ -25,12 +25,49 @@
         
         #qrResult { text-align: center; margin-top: 10px; }
         #qrResult img { max-width: 150px; border-radius: 8px; }
+
+        /* --- NEUES MODAL SYSTEM --- */
+        .modal-overlay { 
+            display: none; 
+            position: fixed; 
+            z-index: 1000; 
+            left: 0; 
+            top: 0; 
+            width: 100%; 
+            height: 100%; 
+            background-color: rgba(0,0,0,0.6); 
+            backdrop-filter: blur(4px); 
+            animation: fadeIn 0.2s ease;
+        }
+        .modal-box { 
+            background-color: var(--surface); 
+            margin: 15vh auto; 
+            padding: 2rem; 
+            border: 1px solid var(--border); 
+            border-radius: 12px; 
+            max-width: 400px; 
+            text-align: center; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
+            transform: translateY(0);
+        }
+        .modal-text { 
+            margin-bottom: 1.5rem; 
+            font-size: 1.1rem; 
+            color: var(--text);
+            word-wrap: break-word;
+        }
+        .modal-btn {
+            width: auto;
+            padding: 8px 30px;
+            font-size: 1rem;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body>
 
 <button class="theme-switch" onclick="toggleTheme()">🌗 Mode</button>
-<h1 style="text-align: center; color: var(--primary);">Schleimy's Omnitool 4.2 (Cloud Edition)</h1>
+<h1 style="text-align: center; color: var(--primary);">Schleimy Downloads tool</h1>
 
 <div class="box" style="border-color: #10b981;">
     <h2 style="border-color: #10b981;">1. Scribd DocDownloader</h2>
@@ -90,11 +127,28 @@
     <div id="qrResult"></div>
 </div>
 
+<div id="customModal" class="modal-overlay">
+    <div class="modal-box">
+        <div id="modalMessage" class="modal-text">Nachricht hier</div>
+        <button class="modal-btn" onclick="closeModal()">Verstanden</button>
+    </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script>
     function toggleTheme() {
         const root = document.documentElement;
         root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    }
+
+    // Modal Funktionen
+    function showModal(msg) {
+        document.getElementById('modalMessage').innerText = msg;
+        document.getElementById('customModal').style.display = 'block';
+    }
+
+    function closeModal() {
+        document.getElementById('customModal').style.display = 'none';
     }
 
     async function scrapeScribd() {
@@ -104,16 +158,18 @@
             const res = await fetch(`/api/scribd?url=${encodeURIComponent(url)}`);
             const data = await res.json();
             document.getElementById('scribdOutput').value = `TITEL: ${data.title}\n\nINHALT:\n${data.text}`;
-        } catch (e) { document.getElementById('scribdOutput').value = "Fehler beim Scraping."; }
+        } catch (e) { 
+            document.getElementById('scribdOutput').value = "Fehler beim Scraping."; 
+            showModal("Fehler beim Scraping von Scribd.");
+        }
     }
 
-    // Geänderter Media Downloader (Redet jetzt über deinen Tunnel)
     async function downloadMedia() {
         const url = document.getElementById('mediaUrl').value;
         const type = document.getElementById('mediaType').value;
         const quality = document.getElementById('mediaQuality').value;
         
-        if (!url) return alert("Bitte eine URL eingeben!");
+        if (!url) return showModal("Bitte eine URL eingeben!");
         
         const btn = document.getElementById('downloadBtn');
         const oldText = btn.innerText;
@@ -121,7 +177,6 @@
         btn.disabled = true;
 
         try {
-            // Wir schicken die Daten an DEINEN eigenen Server unter /api/media
             const res = await fetch('/api/media', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -131,15 +186,14 @@
             const data = await res.json();
             
             if (data.error) {
-                alert("Fehler: " + data.error);
+                showModal("Fehler: " + data.error);
             } else if (data.url) {
-                // Öffnet den vom API-Server generierten Download-Link im neuen Tab
                 window.open(data.url, '_blank');
             } else {
-                alert("Etwas ist schiefgelaufen. Versuche es nochmal.");
+                showModal("Etwas ist schiefgelaufen. Versuche es nochmal.");
             }
         } catch (e) {
-            alert("Konnte keine Verbindung zum Server herstellen.");
+            showModal("Konnte keine Verbindung zum Server herstellen.");
         } finally {
             btn.innerText = oldText;
             btn.disabled = false;
@@ -150,23 +204,29 @@
         const text = document.getElementById('pasteWrite').value;
         const password = document.getElementById('pastePass').value;
         const isBurn = document.getElementById('pasteBurn').checked;
+        
+        if (!text) return showModal("Bitte Text für den Paste eingeben!");
+
         const res = await fetch('/api/paste', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, password, isBurn })
         });
         const data = await res.json();
-        alert(`Gespeichert! ID: ${data.id}`);
+        showModal(`Erfolgreich gespeichert!\nDeine Paste-ID lautet: ${data.id}`);
     }
 
     async function readPaste() {
         const id = document.getElementById('pasteReadId').value;
         const password = document.getElementById('pasteReadPass').value;
+        
+        if (!id) return showModal("Bitte eine Paste-ID eingeben!");
+
         const res = await fetch('/api/paste/read', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, password })
         });
         const data = await res.json();
-        if (data.error) return alert(data.error);
+        if (data.error) return showModal(data.error);
         
         const codeBlock = document.getElementById('pasteCodeBlock');
         codeBlock.innerText = data.text;
@@ -175,6 +235,9 @@
 
     async function shortenUrl() {
         const url = document.getElementById('longUrl').value;
+        
+        if (!url) return showModal("Bitte einen Link eingeben!");
+
         const res = await fetch('/api/shorten', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
@@ -187,7 +250,7 @@
 
     async function generateQR() {
         const data = document.getElementById('longUrl').value;
-        if(!data) return alert("Feld ist leer!");
+        if(!data) return showModal("Bitte erst einen Link eingeben!");
         const res = await fetch(`/api/qr?data=${encodeURIComponent(data)}`);
         const json = await res.json();
         document.getElementById('qrResult').innerHTML = `<img src="${json.qr}" alt="QR">`;
