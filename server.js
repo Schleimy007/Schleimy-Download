@@ -5,17 +5,31 @@ const path = require('path');
 const cheerio = require('cheerio');
 const QRCode = require('qrcode');
 
+// --- FIREBASE LITE (Spezial-Version für Vercel) ---
+const { initializeApp } = require('firebase/app');
+const { getFirestore, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore/lite');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ==========================================
-// FIREBASE REST API (100% Vercel-kompatibel)
+// DEINE FIREBASE DATEN 
 // ==========================================
-const PROJECT_ID = "schleimy-download-portal";
-const API_KEY = "AIzaSyChyWkhBMP6kbAvkiHFJ36G_faHRI7Mbpg";
-const BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+const firebaseConfig = {
+    apiKey: "AIzaSyChyWkhBMP6kbAvkiHFJ36G_faHRI7Mbpg",
+    authDomain: "schleimy-download-portal.firebaseapp.com",
+    projectId: "schleimy-download-portal",
+    storageBucket: "schleimy-download-portal.firebasestorage.app",
+    messagingSenderId: "671408090473",
+    appId: "1:671408090473:web:6231e66e93f4c160d861f8",
+    measurementId: "G-W81SG1B28C"
+};
+
+// Initialisiert Firebase im "Lite" Modus (Perfekt für Vercel)
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
 
 // --- 1. SECURE PASTEBIN ---
 app.post('/api/paste', async (req, res) => {
@@ -24,67 +38,55 @@ app.post('/api/paste', async (req, res) => {
         if (!text) return res.status(400).json({ error: 'Kein Text' });
         
         const id = uuidv4().slice(0, 8);
-        
-        const payload = {
-            fields: {
-                text: { stringValue: text },
-                password: { stringValue: password || "" },
-                isBurn: { booleanValue: !!isBurn },
-                createdAt: { integerValue: Date.now().toString() }
-            }
+        const pasteData = {
+            text: text,
+            password: password || null,
+            isBurn: !!isBurn,
+            createdAt: Date.now() // Zeitstempel für automatischen Ablauf
         };
         
-        const response = await fetch(`${BASE_URL}/pastes?documentId=${id}&key=${API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-        
-        // DIE MASKE IST WEG: Wir senden den ECHTEN Google-Fehler ans Frontend!
-        if (data.error) {
-            return res.status(500).json({ error: `Google sagt: ${data.error.message} (Code: ${data.error.code})` });
-        }
+        // Speichert das Dokument sicher in Firestore
+        await setDoc(doc(db, "pastes", id), pasteData);
         
         res.json({ id });
     } catch (error) {
-        res.status(500).json({ error: `Server Crash beim Speichern: ${error.message}` });
+        console.error(error);
+        res.status(500).json({ error: `Vercel DB Fehler beim Speichern: ${error.message}` });
     }
 });
 
 app.post('/api/paste/read', async (req, res) => {
     try {
         const { id, password } = req.body;
+        const pasteRef = doc(db, "pastes", id);
+        const pasteSnap = await getDoc(pasteRef);
         
-        const response = await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`);
-        const data = await response.json();
-        
-        if (data.error) {
-            if (data.error.code === 404) return res.status(404).json({ error: 'Paste nicht gefunden oder bereits zerstört.' });
-            return res.status(500).json({ error: `Google sagt beim Lesen: ${data.error.message}` });
+        if (!pasteSnap.exists()) {
+            return res.status(404).json({ error: 'Paste nicht gefunden oder bereits zerstört.' });
         }
         
-        const paste = data.fields;
-        const createdAt = parseInt(paste.createdAt.integerValue);
-        const isBurn = paste.isBurn.booleanValue;
-        const dbPassword = paste.password.stringValue;
-        const text = paste.text.stringValue;
+        const paste = pasteSnap.data();
 
-        if (Date.now() - createdAt > 604800000) {
-            await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`, { method: 'DELETE' });
+        // Check: Ist der Paste älter als 7 Tage? (604.800.000 Millisekunden)
+        if (Date.now() - paste.createdAt > 604800000) {
+            await deleteDoc(pasteRef);
             return res.status(404).json({ error: 'Paste ist nach 7 Tagen abgelaufen und wurde gelöscht.' });
         }
         
-        if (dbPassword && dbPassword !== password) return res.status(403).json({ error: 'Falsches Passwort!' });
+        // Passwort Check
+        if (paste.password && paste.password !== password) {
+            return res.status(403).json({ error: 'Falsches Passwort!' });
+        }
 
-        if (isBurn) {
-            await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`, { method: 'DELETE' });
+        // Burn after reading
+        if (paste.isBurn) {
+            await deleteDoc(pasteRef);
         }
         
-        res.json({ text: text });
+        res.json({ text: paste.text });
     } catch (error) {
-        res.status(500).json({ error: `Server Crash beim Lesen: ${error.message}` });
+        console.error(error);
+        res.status(500).json({ error: `Vercel DB Fehler beim Lesen: ${error.message}` });
     }
 });
 
@@ -95,45 +97,37 @@ app.post('/api/shorten', async (req, res) => {
         if (!url) return res.status(400).json({ error: 'Keine URL' });
         
         const id = uuidv4().slice(0, 5);
-        const payload = {
-            fields: {
-                url: { stringValue: url },
-                createdAt: { integerValue: Date.now().toString() }
-            }
-        };
         
-        const response = await fetch(`${BASE_URL}/shortlinks?documentId=${id}&key=${API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+        await setDoc(doc(db, "shortlinks", id), {
+            url: url,
+            createdAt: Date.now()
         });
-
-        const data = await response.json();
-        if (data.error) return res.status(500).json({ error: `Google Link-Fehler: ${data.error.message}` });
         
         res.json({ shortUrl: `/s/${id}` });
     } catch (error) {
-        res.status(500).json({ error: `Server Crash Link-Kürzen: ${error.message}` });
+        console.error(error);
+        res.status(500).json({ error: `Vercel DB Fehler beim Kürzen: ${error.message}` });
     }
 });
 
 app.get('/s/:id', async (req, res) => {
     try {
-        const response = await fetch(`${BASE_URL}/shortlinks/${req.params.id}?key=${API_KEY}`);
-        const data = await response.json();
+        const linkRef = doc(db, "shortlinks", req.params.id);
+        const linkSnap = await getDoc(linkRef);
         
-        if (data.error && data.error.code === 404) return res.status(404).send('Shortlink existiert nicht.');
+        if (!linkSnap.exists()) return res.status(404).send('Shortlink existiert nicht.');
         
-        const url = data.fields.url.stringValue;
-        const createdAt = parseInt(data.fields.createdAt.integerValue);
+        const link = linkSnap.data();
 
-        if (Date.now() - createdAt > 2592000000) {
-            await fetch(`${BASE_URL}/shortlinks/${req.params.id}?key=${API_KEY}`, { method: 'DELETE' });
+        // Links verfallen nach 30 Tagen
+        if (Date.now() - link.createdAt > 2592000000) {
+            await deleteDoc(linkRef);
             return res.status(404).send('Shortlink ist nach 30 Tagen abgelaufen.');
         }
 
-        res.redirect(url);
+        res.redirect(link.url);
     } catch (error) {
+        console.error(error);
         res.status(500).send('Datenbank Fehler');
     }
 });
@@ -184,5 +178,5 @@ app.get('/api/scribd', async (req, res) => {
     }
 });
 
-// --- VERCEL EXPORT ---
+// --- WICHTIG FÜR VERCEL ---
 module.exports = app;
