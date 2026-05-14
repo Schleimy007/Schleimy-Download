@@ -25,7 +25,6 @@ app.post('/api/paste', async (req, res) => {
         
         const id = uuidv4().slice(0, 8);
         
-        // Datenpaket für Googles REST API schnüren
         const payload = {
             fields: {
                 text: { stringValue: text },
@@ -35,7 +34,6 @@ app.post('/api/paste', async (req, res) => {
             }
         };
         
-        // Purer HTTP-Request (Vercel liebt das, weil es nicht blockiert)
         const response = await fetch(`${BASE_URL}/pastes?documentId=${id}&key=${API_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -44,15 +42,14 @@ app.post('/api/paste', async (req, res) => {
 
         const data = await response.json();
         
+        // DIE MASKE IST WEG: Wir senden den ECHTEN Google-Fehler ans Frontend!
         if (data.error) {
-            console.error("[REST API ERROR]:", data.error);
-            return res.status(500).json({ error: 'Firebase REST API blockiert.' });
+            return res.status(500).json({ error: `Google sagt: ${data.error.message} (Code: ${data.error.code})` });
         }
         
         res.json({ id });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'DB Fehler beim Speichern' });
+        res.status(500).json({ error: `Server Crash beim Speichern: ${error.message}` });
     }
 });
 
@@ -60,12 +57,12 @@ app.post('/api/paste/read', async (req, res) => {
     try {
         const { id, password } = req.body;
         
-        // Paste abrufen
         const response = await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`);
         const data = await response.json();
         
-        if (data.error && data.error.code === 404) {
-            return res.status(404).json({ error: 'Paste nicht gefunden oder bereits zerstört.' });
+        if (data.error) {
+            if (data.error.code === 404) return res.status(404).json({ error: 'Paste nicht gefunden oder bereits zerstört.' });
+            return res.status(500).json({ error: `Google sagt beim Lesen: ${data.error.message}` });
         }
         
         const paste = data.fields;
@@ -74,24 +71,20 @@ app.post('/api/paste/read', async (req, res) => {
         const dbPassword = paste.password.stringValue;
         const text = paste.text.stringValue;
 
-        // Check: Ist der Paste älter als 7 Tage?
         if (Date.now() - createdAt > 604800000) {
             await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`, { method: 'DELETE' });
             return res.status(404).json({ error: 'Paste ist nach 7 Tagen abgelaufen und wurde gelöscht.' });
         }
         
-        // Passwort Check
         if (dbPassword && dbPassword !== password) return res.status(403).json({ error: 'Falsches Passwort!' });
 
-        // Burn after reading -> Direkt per REST API vernichten
         if (isBurn) {
             await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`, { method: 'DELETE' });
         }
         
         res.json({ text: text });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'DB Fehler beim Lesen' });
+        res.status(500).json({ error: `Server Crash beim Lesen: ${error.message}` });
     }
 });
 
@@ -109,15 +102,18 @@ app.post('/api/shorten', async (req, res) => {
             }
         };
         
-        await fetch(`${BASE_URL}/shortlinks?documentId=${id}&key=${API_KEY}`, {
+        const response = await fetch(`${BASE_URL}/shortlinks?documentId=${id}&key=${API_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+
+        const data = await response.json();
+        if (data.error) return res.status(500).json({ error: `Google Link-Fehler: ${data.error.message}` });
         
         res.json({ shortUrl: `/s/${id}` });
     } catch (error) {
-        res.status(500).json({ error: 'DB Fehler beim Kürzen' });
+        res.status(500).json({ error: `Server Crash Link-Kürzen: ${error.message}` });
     }
 });
 
