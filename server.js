@@ -64,64 +64,8 @@ app.get('/api/qr', async (req, res) => {
     }
 });
 
-// --- 4. MEDIA DOWNLOADER (Mit Fallback-System & v8 Support) ---
-app.post('/api/media', async (req, res) => {
-    const { url, type, quality } = req.body;
-    if (!url) return res.status(400).json({ error: 'Keine URL angegeben' });
-
-    // Liste von kostenlosen, öffentlichen Community-Instanzen
-    const cobaltInstances = [
-        'https://co.wuk.sh/api/json',          // Beliebter v7 Server
-        'https://co.wuk.sh/',                  // Beliebter v8 Server
-        'https://cobalt.qewertyy.dev/api/json',// Backup 1
-        'https://api.cobalt.tools/'            // Offizieller v8 Server (falls er uns doch reinlässt)
-    ];
-
-    let success = false;
-    let finalUrl = null;
-    let lastError = "Alle Download-Server sind aktuell überlastet.";
-
-    // Wir probieren die Server nacheinander durch, bis einer funktioniert
-    for (let apiUrl of cobaltInstances) {
-        try {
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                },
-                // Wir schicken Parameter für v7 UND v8 gleichzeitig mit. Der Server nimmt sich, was er braucht.
-                body: JSON.stringify({
-                    url: url,
-                    isAudioOnly: type === 'mp3', // für v7 Server
-                    vQuality: quality,           // für v7 Server
-                    downloadMode: type === 'mp3' ? 'audio' : 'auto', // für v8 Server
-                    videoQuality: quality === 'max' ? 'max' : quality // für v8 Server
-                })
-            });
-
-            const data = await response.json();
-            
-            if (data.url) {
-                finalUrl = data.url;
-                success = true;
-                break; // Erfolgreich! Wir stoppen die Schleife
-            } else if (data.status === 'error' || data.error) {
-                lastError = data.text || data.error || "Unbekannter API Fehler";
-                // Wir werfen keinen direkten Fehler zum Nutzer, sondern lassen die Schleife den nächsten Server probieren!
-            }
-        } catch (error) {
-            continue; // Bei Verbindungsabbruch direkt den nächsten Server probieren
-        }
-    }
-
-    if (success && finalUrl) {
-        res.json({ url: finalUrl });
-    } else {
-        res.status(500).json({ error: lastError });
-    }
-});
+// --- 4. MEDIA DOWNLOADER ---
+// Entfernt! Läuft jetzt zu 100% über den Browser des Nutzers (Frontend).
 
 // --- 5. SCRIBD TEXT SCRAPER ---
 app.get('/api/scribd', async (req, res) => {
