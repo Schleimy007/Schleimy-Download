@@ -15,7 +15,8 @@
         input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box;}
         button { background: var(--primary); color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; transition: opacity 0.2s;}
         button:hover { opacity: 0.8; }
-        button:disabled { background: #555; cursor: not-allowed; }
+        button:disabled { background: #555; cursor: not-allowed; opacity: 0.6;}
+        input:disabled, select:disabled { opacity: 0.5; cursor: not-allowed; }
         
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .flex { display: flex; gap: 10px; }
@@ -70,21 +71,22 @@
     <textarea id="scribdOutput" rows="5" readonly placeholder="Text wird hier geladen..." style="margin-top:10px;"></textarea>
 </div>
 
-<div class="box">
-    <h2>2. Universal Media (YT, TikTok, Twitter, Soundcloud)</h2>
+<div class="box" style="border-color: #ef4444; background: rgba(239, 68, 68, 0.05);">
+    <h2 style="border-color: #ef4444; color: #ef4444;">2. Universal Media <span style="font-size: 0.7em; background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; vertical-align: middle; margin-left: 5px;">OFFLINE</span></h2>
+    <p style="color: #ef4444; font-size: 0.9em; margin-top: -10px; margin-bottom: 15px; font-weight: bold;">
+        Wegen extremer Server-Überlastung durch YouTube aktuell deaktiviert.
+    </p>
     <div class="flex">
-        <input type="text" id="mediaUrl" placeholder="Video oder Audio URL..." style="flex: 2;">
-        <select id="mediaType" style="flex: 1;">
+        <input type="text" id="mediaUrl" placeholder="Funktion deaktiviert..." style="flex: 2;" disabled>
+        <select id="mediaType" style="flex: 1;" disabled>
             <option value="mp4">Video (MP4)</option>
             <option value="mp3">Audio (MP3)</option>
         </select>
-        <select id="mediaQuality" style="flex: 1;">
+        <select id="mediaQuality" style="flex: 1;" disabled>
             <option value="max">Beste Qualität</option>
-            <option value="1080">1080p</option>
-            <option value="720">720p</option>
         </select>
     </div>
-    <button id="downloadBtn" onclick="downloadMedia()">Download Starten</button>
+    <button id="downloadBtn" disabled style="background: #ef4444;">Wartungsmodus</button>
 </div>
 
 <div class="box">
@@ -155,79 +157,6 @@
             document.getElementById('scribdOutput').value = "Fehler beim Scraping."; 
             showModal("Fehler beim Scraping von Scribd.");
         }
-    }
-
-   async function downloadMedia() {
-        const url = document.getElementById('mediaUrl').value;
-        const type = document.getElementById('mediaType').value;
-        const quality = document.getElementById('mediaQuality').value;
-        
-        if (!url) return showModal("Bitte eine URL eingeben!");
-        
-        const btn = document.getElementById('downloadBtn');
-        const oldText = btn.innerText;
-        btn.innerText = "Lade... Bitte warten";
-        btn.disabled = true;
-
-        showModal("Verbinde mit Servern... (0% eigene Serverlast)");
-
-        // Eine erweiterte Liste von Servern (inklusive ein paar neuerer)
-        const apis = [
-            'https://co.wuk.sh/api/json',
-            'https://cobalt.qewertyy.dev/api/json',
-            'https://api.cobalt.tools/api/json',
-            'https://api.vkrdownloader.vercel.app/server?vkr=' // Alternativer Fallback-API-Stil
-        ];
-
-        let finalUrl = null;
-
-        // Versuche alle APIs unsichtbar im Hintergrund
-        for (let api of apis) {
-            try {
-                // Manche APIs brauchen GET, Cobalt braucht POST. Wir versuchen den Standard-Cobalt-Weg.
-                if(api.includes('cobalt') || api.includes('wuk.sh')) {
-                    const res = await fetch(api, {
-                        method: 'POST',
-                        headers: {
-                            'Accept': 'application/json',
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            url: url,
-                            isAudioOnly: type === 'mp3',
-                            vQuality: quality
-                        })
-                    });
-
-                    const data = await res.json();
-                    
-                    if (data.url) {
-                        finalUrl = data.url;
-                        break; // Erfolgreich! Schleife abbrechen.
-                    }
-                }
-            } catch (e) {
-                // Leise ignorieren, nächster Server wird probiert
-            }
-        }
-
-        if (finalUrl) {
-            closeModal(); 
-            window.open(finalUrl, '_blank'); 
-        } else {
-            // PLAN B: ULTIMATIVER FALLBACK
-            // Wenn alle APIs down sind, leiten wir den Nutzer zur offiziellen Web-Oberfläche weiter!
-            showModal("Hintergrund-Server sind überlastet. Leite zur offiziellen Fallback-Seite weiter...");
-            
-            setTimeout(() => {
-                closeModal();
-                // Öffnet das Cobalt-Webinterface mit bereits eingefügtem Link!
-                window.open(`https://cobalt.tools/?u=${encodeURIComponent(url)}`, '_blank');
-            }, 2500);
-        }
-
-        btn.innerText = oldText;
-        btn.disabled = false;
     }
 
     async function createPaste() {
