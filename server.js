@@ -9,14 +9,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Bedient die statischen Dateien (index.html) aus dem 'public' Ordner
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- DATENBANKEN (In-Memory) ---
 const pastes = {};
 const shortLinks = {};
 
-// --- 1. PASTEBIN (Mit Passwort & Burn-after-reading) ---
+// --- 1. PASTEBIN ---
 app.post('/api/paste', (req, res) => {
     const { text, password, isBurn } = req.body;
     if (!text) return res.status(400).json({ error: 'Kein Text' });
@@ -33,7 +32,7 @@ app.post('/api/paste/read', (req, res) => {
     if (paste.password && paste.password !== password) return res.status(403).json({ error: 'Falsches Passwort' });
 
     const text = paste.text;
-    if (paste.isBurn) delete pastes[id]; // Selbstzerstörung
+    if (paste.isBurn) delete pastes[id]; 
     
     res.json({ text });
 });
@@ -65,11 +64,42 @@ app.get('/api/qr', async (req, res) => {
     }
 });
 
-// --- 4. MEDIA DOWNLOADER ---
-// Die Logik läuft jetzt zu 100% im Frontend über die Cobalt API, 
-// um deinen Server komplett zu entlasten.
+// --- 4. MEDIA DOWNLOADER (Der neue API-Tunnel für 0 Serverlast) ---
+app.post('/api/media', async (req, res) => {
+    const { url, type, quality } = req.body;
+    if (!url) return res.status(400).json({ error: 'Keine URL angegeben' });
 
-// --- 5. SCRIBD TEXT SCRAPER (Googlebot SEO Hack) ---
+    try {
+        // Wir tunneln die Anfrage über DEINEN Server zur Cobalt API. 
+        // Das umgeht den CORS-Blocker im Browser.
+        const response = await fetch('https://api.cobalt.tools/api/json', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' // Täuscht einen normalen Browser vor
+            },
+            body: JSON.stringify({
+                url: url,
+                isAudioOnly: type === 'mp3',
+                vQuality: quality // z.B. "1080", "720", "max"
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.status === 'error') {
+            return res.status(400).json({ error: data.text });
+        }
+        
+        // Wir schicken dem Nutzer nur den finalen Link. Der Download läuft über Cobalt!
+        res.json({ url: data.url }); 
+    } catch (error) {
+        res.status(500).json({ error: 'Verbindung zur Download-API fehlgeschlagen.' });
+    }
+});
+
+// --- 5. SCRIBD TEXT SCRAPER ---
 app.get('/api/scribd', async (req, res) => {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'Scribd URL fehlt' });
@@ -87,7 +117,6 @@ app.get('/api/scribd', async (req, res) => {
         const $ = cheerio.load(html);
         
         const title = $('title').text().replace(' - Scribd', '').trim();
-        
         let extractedText = "";
         
         $('.text_line, span.a, p, .document_scroller span').each((i, el) => {
@@ -96,7 +125,7 @@ app.get('/api/scribd', async (req, res) => {
         });
 
         if(extractedText.length < 100) {
-            extractedText = "Scribd hat den Text extrem hart als Bilddatei verschlüsselt.\n\nKurzbeschreibung des Dokuments:\n" + $('meta[name="description"]').attr('content');
+            extractedText = "Scribd hat den Text hart als Bilddatei verschlüsselt.\n\nKurzbeschreibung:\n" + $('meta[name="description"]').attr('content');
         }
 
         res.json({ title, text: extractedText });
@@ -105,7 +134,6 @@ app.get('/api/scribd', async (req, res) => {
     }
 });
 
-// Nutzt den Port vom Host (z.B. Render) oder 3000 lokal
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`[SCHLEIMY'S OMNITOOL] Server läuft auf Port ${PORT}`);
