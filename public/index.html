@@ -1,1 +1,201 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>Schleimy's Omnitool</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <style>
+        :root[data-theme="dark"] { --bg: #0f0f0f; --surface: #1a1a1a; --text: #f3f4f6; --border: #334155; --primary: #3b82f6; }
+        :root[data-theme="light"] { --bg: #f8fafc; --surface: #ffffff; --text: #0f172a; --border: #cbd5e1; --primary: #2563eb; }
+        
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); max-width: 900px; margin: 0 auto; padding: 2rem; transition: 0.3s; }
+        .box { background: var(--surface); padding: 1.5rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 2rem; }
+        h2 { border-left: 4px solid var(--primary); padding-left: 10px; margin-top: 0; }
+        
+        input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box;}
+        button { background: var(--primary); color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;}
+        button:hover { opacity: 0.8; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .flex { display: flex; gap: 10px; }
+        
+        /* Theme Switcher */
+        .theme-switch { position: absolute; top: 20px; right: 20px; cursor: pointer; background: var(--surface); border: 1px solid var(--border); padding: 5px 10px; border-radius: 20px; color: var(--text);}
+        
+        #qrResult { text-align: center; margin-top: 10px; }
+        #qrResult img { max-width: 150px; border-radius: 8px; }
+    </style>
+</head>
+<body>
 
+<button class="theme-switch" onclick="toggleTheme()">🌗 Mode</button>
+<h1 style="text-align: center; color: var(--primary);">Schleimy's Omnitool 4.1 (Cloud Edition)</h1>
+
+<div class="box" style="border-color: #10b981;">
+    <h2 style="border-color: #10b981;">1. Scribd DocDownloader</h2>
+    <input type="text" id="scribdUrl" placeholder="https://de.scribd.com/document/...">
+    <button onclick="scrapeScribd()" style="background: #10b981;">Dokument Extrahieren</button>
+    <textarea id="scribdOutput" rows="5" readonly placeholder="Text wird hier geladen..." style="margin-top:10px;"></textarea>
+</div>
+
+<div class="box">
+    <h2>2. Universal Media (YT, TikTok, Twitter, Soundcloud)</h2>
+    <div class="flex">
+        <input type="text" id="mediaUrl" placeholder="Video oder Audio URL..." style="flex: 2;">
+        <select id="mediaType" style="flex: 1;">
+            <option value="mp4">Video (Beste Qualität)</option>
+            <option value="mp3">Audio (MP3)</option>
+        </select>
+    </div>
+    <button id="downloadBtn" onclick="downloadMedia()">Download Starten</button>
+</div>
+
+<div class="box">
+    <h2>3. Secure Pastebin (Passwort & Burn)</h2>
+    <textarea id="pasteWrite" rows="4" placeholder="Dein geheimer Code/Text..."></textarea>
+    <div class="grid-2">
+        <input type="password" id="pastePass" placeholder="Passwort (Optional)">
+        <label style="display: flex; align-items: center; gap: 5px;">
+            <input type="checkbox" id="pasteBurn" style="width:auto;"> Burn after reading (Löscht sich nach 1x lesen)
+        </label>
+    </div>
+    <button onclick="createPaste()">Paste Erstellen</button>
+    
+    <hr style="border: 0; border-top: 1px solid var(--border); margin: 15px 0;">
+    
+    <div class="flex">
+        <input type="text" id="pasteReadId" placeholder="Paste ID...">
+        <input type="password" id="pasteReadPass" placeholder="Passwort...">
+        <button onclick="readPaste()">Lesen</button>
+    </div>
+    
+    <pre><code id="pasteCodeBlock" class="language-javascript"></code></pre>
+</div>
+
+<div class="box">
+    <h2>4. URL Shortener & QR Generator</h2>
+    <div class="flex">
+        <input type="text" id="longUrl" placeholder="Langer Link...">
+        <button onclick="shortenUrl()">Kürzen</button>
+    </div>
+    <p id="shortLinkResult" style="font-weight: bold; color: var(--primary);"></p>
+    
+    <button onclick="generateQR()" style="background: #6366f1;">QR Code von Link generieren</button>
+    <div id="qrResult"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script>
+    // Theme Toggle
+    function toggleTheme() {
+        const root = document.documentElement;
+        root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    }
+
+    // 1. Scribd
+    async function scrapeScribd() {
+        const url = document.getElementById('scribdUrl').value;
+        document.getElementById('scribdOutput').value = "Scraping läuft... (Kann bei Scribd etwas dauern)";
+        try {
+            const res = await fetch(`/api/scribd?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            document.getElementById('scribdOutput').value = `TITEL: ${data.title}\n\nINHALT:\n${data.text}`;
+        } catch (e) { document.getElementById('scribdOutput').value = "Fehler beim Scraping."; }
+    }
+
+    // 2. Media Download (Ohne Server-Belastung!)
+    async function downloadMedia() {
+        const url = document.getElementById('mediaUrl').value;
+        const type = document.getElementById('mediaType').value;
+        
+        if (!url) return alert("Bitte eine URL eingeben!");
+        
+        const btn = document.getElementById('downloadBtn');
+        const oldText = btn.innerText;
+        btn.innerText = "Lade... Bitte warten";
+        btn.disabled = true;
+
+        try {
+            // Cobalt API Anfrage
+            const res = await fetch('https://api.cobalt.tools/api/json', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    url: url,
+                    isAudioOnly: type === 'mp3'
+                })
+            });
+
+            const data = await res.json();
+            
+            if (data.status === 'error') {
+                alert("Fehler: " + data.text);
+            } else if (data.url) {
+                // Öffnet den fertigen Download in einem neuen Tab
+                window.open(data.url, '_blank');
+            } else {
+                alert("Etwas ist schiefgelaufen. Versuche es nochmal.");
+            }
+        } catch (e) {
+            alert("Fehler beim Verbinden zur Download-API.");
+        } finally {
+            btn.innerText = oldText;
+            btn.disabled = false;
+        }
+    }
+
+    // 3. Paste
+    async function createPaste() {
+        const text = document.getElementById('pasteWrite').value;
+        const password = document.getElementById('pastePass').value;
+        const isBurn = document.getElementById('pasteBurn').checked;
+        const res = await fetch('/api/paste', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, password, isBurn })
+        });
+        const data = await res.json();
+        alert(`Gespeichert! ID: ${data.id}`);
+    }
+
+    async function readPaste() {
+        const id = document.getElementById('pasteReadId').value;
+        const password = document.getElementById('pasteReadPass').value;
+        const res = await fetch('/api/paste/read', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, password })
+        });
+        const data = await res.json();
+        if (data.error) return alert(data.error);
+        
+        const codeBlock = document.getElementById('pasteCodeBlock');
+        codeBlock.innerText = data.text;
+        Prism.highlightElement(codeBlock);
+    }
+
+    // 4. Shortener & QR
+    async function shortenUrl() {
+        const url = document.getElementById('longUrl').value;
+        const res = await fetch('/api/shorten', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+        const shortUrl = window.location.origin + data.shortUrl;
+        document.getElementById('shortLinkResult').innerText = shortUrl;
+        document.getElementById('longUrl').value = shortUrl;
+    }
+
+    async function generateQR() {
+        const data = document.getElementById('longUrl').value;
+        if(!data) return alert("Feld ist leer!");
+        const res = await fetch(`/api/qr?data=${encodeURIComponent(data)}`);
+        const json = await res.json();
+        document.getElementById('qrResult').innerHTML = `<img src="${json.qr}" alt="QR">`;
+    }
+</script>
+</body>
+</html>
