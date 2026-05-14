@@ -5,32 +5,17 @@ const path = require('path');
 const cheerio = require('cheerio');
 const QRCode = require('qrcode');
 
-// --- FIREBASE IMPORT ---
-const { initializeApp } = require('firebase/app');
-const { getFirestore, doc, setDoc, getDoc, deleteDoc } = require('firebase/firestore');
-
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ==========================================
-// DEINE FIREBASE DATEN (Sicher im Backend)
+// FIREBASE REST API (100% Vercel-kompatibel)
 // ==========================================
-const firebaseConfig = {
-    apiKey: "AIzaSyChyWkhBMP6kbAvkiHFJ36G_faHRI7Mbpg",
-    authDomain: "schleimy-download-portal.firebaseapp.com",
-    projectId: "schleimy-download-portal",
-    storageBucket: "schleimy-download-portal.firebasestorage.app",
-    messagingSenderId: "671408090473",
-    appId: "1:671408090473:web:6231e66e93f4c160d861f8",
-    measurementId: "G-W81SG1B28C"
-};
-
-// Firebase initialisieren
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
-console.log("[FIREBASE] Erfolgreich verbunden!");
+const PROJECT_ID = "schleimy-download-portal";
+const API_KEY = "AIzaSyChyWkhBMP6kbAvkiHFJ36G_faHRI7Mbpg";
+const BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
 // --- 1. SECURE PASTEBIN ---
 app.post('/api/paste', async (req, res) => {
@@ -39,15 +24,31 @@ app.post('/api/paste', async (req, res) => {
         if (!text) return res.status(400).json({ error: 'Kein Text' });
         
         const id = uuidv4().slice(0, 8);
-        const pasteData = {
-            text: text,
-            password: password || null,
-            isBurn: !!isBurn,
-            createdAt: Date.now() // Zeitstempel für automatischen Ablauf
+        
+        // Datenpaket für Googles REST API schnüren
+        const payload = {
+            fields: {
+                text: { stringValue: text },
+                password: { stringValue: password || "" },
+                isBurn: { booleanValue: !!isBurn },
+                createdAt: { integerValue: Date.now().toString() }
+            }
         };
         
-        // Speichert in der Firestore Collection 'pastes'
-        await setDoc(doc(db, "pastes", id), pasteData);
+        // Purer HTTP-Request (Vercel liebt das, weil es nicht blockiert)
+        const response = await fetch(`${BASE_URL}/pastes?documentId=${id}&key=${API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error("[REST API ERROR]:", data.error);
+            return res.status(500).json({ error: 'Firebase REST API blockiert.' });
+        }
+        
         res.json({ id });
     } catch (error) {
         console.error(error);
@@ -58,29 +59,38 @@ app.post('/api/paste', async (req, res) => {
 app.post('/api/paste/read', async (req, res) => {
     try {
         const { id, password } = req.body;
-        const pasteRef = doc(db, "pastes", id);
-        const pasteSnap = await getDoc(pasteRef);
         
-        if (!pasteSnap.exists()) return res.status(404).json({ error: 'Paste nicht gefunden oder bereits zerstört.' });
+        // Paste abrufen
+        const response = await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`);
+        const data = await response.json();
         
-        const paste = pasteSnap.data();
+        if (data.error && data.error.code === 404) {
+            return res.status(404).json({ error: 'Paste nicht gefunden oder bereits zerstört.' });
+        }
+        
+        const paste = data.fields;
+        const createdAt = parseInt(paste.createdAt.integerValue);
+        const isBurn = paste.isBurn.booleanValue;
+        const dbPassword = paste.password.stringValue;
+        const text = paste.text.stringValue;
 
-        // Check: Ist der Paste älter als 7 Tage? (604.800.000 Millisekunden)
-        if (Date.now() - paste.createdAt > 604800000) {
-            await deleteDoc(pasteRef);
+        // Check: Ist der Paste älter als 7 Tage?
+        if (Date.now() - createdAt > 604800000) {
+            await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`, { method: 'DELETE' });
             return res.status(404).json({ error: 'Paste ist nach 7 Tagen abgelaufen und wurde gelöscht.' });
         }
         
         // Passwort Check
-        if (paste.password && paste.password !== password) return res.status(403).json({ error: 'Falsches Passwort!' });
+        if (dbPassword && dbPassword !== password) return res.status(403).json({ error: 'Falsches Passwort!' });
 
-        // Burn after reading -> Sofort löschen, NACHDEM das Passwort gestimmt hat
-        if (paste.isBurn) {
-            await deleteDoc(pasteRef);
+        // Burn after reading -> Direkt per REST API vernichten
+        if (isBurn) {
+            await fetch(`${BASE_URL}/pastes/${id}?key=${API_KEY}`, { method: 'DELETE' });
         }
         
-        res.json({ text: paste.text });
+        res.json({ text: text });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: 'DB Fehler beim Lesen' });
     }
 });
@@ -92,9 +102,17 @@ app.post('/api/shorten', async (req, res) => {
         if (!url) return res.status(400).json({ error: 'Keine URL' });
         
         const id = uuidv4().slice(0, 5);
-        await setDoc(doc(db, "shortlinks", id), {
-            url: url,
-            createdAt: Date.now()
+        const payload = {
+            fields: {
+                url: { stringValue: url },
+                createdAt: { integerValue: Date.now().toString() }
+            }
+        };
+        
+        await fetch(`${BASE_URL}/shortlinks?documentId=${id}&key=${API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
         
         res.json({ shortUrl: `/s/${id}` });
@@ -105,20 +123,20 @@ app.post('/api/shorten', async (req, res) => {
 
 app.get('/s/:id', async (req, res) => {
     try {
-        const linkRef = doc(db, "shortlinks", req.params.id);
-        const linkSnap = await getDoc(linkRef);
+        const response = await fetch(`${BASE_URL}/shortlinks/${req.params.id}?key=${API_KEY}`);
+        const data = await response.json();
         
-        if (!linkSnap.exists()) return res.status(404).send('Shortlink existiert nicht.');
+        if (data.error && data.error.code === 404) return res.status(404).send('Shortlink existiert nicht.');
         
-        const link = linkSnap.data();
+        const url = data.fields.url.stringValue;
+        const createdAt = parseInt(data.fields.createdAt.integerValue);
 
-        // Links verfallen nach 30 Tagen
-        if (Date.now() - link.createdAt > 2592000000) {
-            await deleteDoc(linkRef);
+        if (Date.now() - createdAt > 2592000000) {
+            await fetch(`${BASE_URL}/shortlinks/${req.params.id}?key=${API_KEY}`, { method: 'DELETE' });
             return res.status(404).send('Shortlink ist nach 30 Tagen abgelaufen.');
         }
 
-        res.redirect(link.url);
+        res.redirect(url);
     } catch (error) {
         res.status(500).send('Datenbank Fehler');
     }
@@ -170,7 +188,5 @@ app.get('/api/scribd', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`[SCHLEIMY DOWNLOAD PORTAL] Server läuft auf Port ${PORT}`);
-});
+// --- VERCEL EXPORT ---
+module.exports = app;
