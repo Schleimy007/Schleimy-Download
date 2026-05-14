@@ -20,13 +20,12 @@
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .flex { display: flex; gap: 10px; }
         
-        /* Theme Switcher */
         .theme-switch { position: absolute; top: 20px; right: 20px; cursor: pointer; background: var(--surface); border: 1px solid var(--border); padding: 5px 10px; border-radius: 20px; color: var(--text);}
         
         #qrResult { text-align: center; margin-top: 10px; }
         #qrResult img { max-width: 150px; border-radius: 8px; }
 
-        /* --- NEUES MODAL SYSTEM --- */
+        /* --- MODAL SYSTEM --- */
         .modal-overlay { 
             display: none; 
             position: fixed; 
@@ -48,7 +47,6 @@
             max-width: 400px; 
             text-align: center; 
             box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
-            transform: translateY(0);
         }
         .modal-text { 
             margin-bottom: 1.5rem; 
@@ -56,11 +54,7 @@
             color: var(--text);
             word-wrap: break-word;
         }
-        .modal-btn {
-            width: auto;
-            padding: 8px 30px;
-            font-size: 1rem;
-        }
+        .modal-btn { width: auto; padding: 8px 30px; font-size: 1rem; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
@@ -99,7 +93,7 @@
     <div class="grid-2">
         <input type="password" id="pastePass" placeholder="Passwort (Optional)">
         <label style="display: flex; align-items: center; gap: 5px;">
-            <input type="checkbox" id="pasteBurn" style="width:auto;"> Burn after reading (Löscht sich nach 1x lesen)
+            <input type="checkbox" id="pasteBurn" style="width:auto;"> Burn after reading
         </label>
     </div>
     <button onclick="createPaste()">Paste Erstellen</button>
@@ -141,7 +135,6 @@
         root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
     }
 
-    // Modal Funktionen
     function showModal(msg) {
         document.getElementById('modalMessage').innerText = msg;
         document.getElementById('customModal').style.display = 'block';
@@ -176,28 +169,53 @@
         btn.innerText = "Lade... Bitte warten";
         btn.disabled = true;
 
-        try {
-            const res = await fetch('/api/media', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url, type, quality })
-            });
+        showModal("Verbinde mit öffentlichen Servern... Dein eigener Server wird dafür absolut NICHT belastet!");
 
-            const data = await res.json();
-            
-            if (data.error) {
-                showModal("Fehler: " + data.error);
-            } else if (data.url) {
-                window.open(data.url, '_blank');
-            } else {
-                showModal("Etwas ist schiefgelaufen. Versuche es nochmal.");
+        // Liste von kostenlosen Community-Servern. Der Browser probiert sie nacheinander durch.
+        const apis = [
+            'https://co.wuk.sh/api/json',
+            'https://cobalt.qewertyy.dev/api/json',
+            'https://api.cobalt.tools/api/json'
+        ];
+
+        let finalUrl = null;
+
+        for (let api of apis) {
+            try {
+                const res = await fetch(api, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        url: url,
+                        isAudioOnly: type === 'mp3',
+                        vQuality: quality
+                    })
+                });
+
+                const data = await res.json();
+                
+                if (data.url) {
+                    finalUrl = data.url;
+                    break; // Erfolgreich! Schleife abbrechen.
+                }
+            } catch (e) {
+                // Fehler leise ignorieren und den nächsten Server in der Liste probieren
+                console.log("Server fehlgeschlagen, probiere den nächsten...");
             }
-        } catch (e) {
-            showModal("Konnte keine Verbindung zum Server herstellen.");
-        } finally {
-            btn.innerText = oldText;
-            btn.disabled = false;
         }
+
+        if (finalUrl) {
+            closeModal(); // Schließt das Info-Modal
+            window.open(finalUrl, '_blank'); // Öffnet den Download
+        } else {
+            showModal("Fehler: Alle öffentlichen Download-Server sind gerade überlastet oder blockiert. Bitte versuche es später noch einmal!");
+        }
+
+        btn.innerText = oldText;
+        btn.disabled = false;
     }
 
     async function createPaste() {
@@ -235,7 +253,6 @@
 
     async function shortenUrl() {
         const url = document.getElementById('longUrl').value;
-        
         if (!url) return showModal("Bitte einen Link eingeben!");
 
         const res = await fetch('/api/shorten', {
