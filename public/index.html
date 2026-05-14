@@ -30,7 +30,7 @@
 <body>
 
 <button class="theme-switch" onclick="toggleTheme()">🌗 Mode</button>
-<h1 style="text-align: center; color: var(--primary);">Schleimy's Omnitool 4.1 (Cloud Edition)</h1>
+<h1 style="text-align: center; color: var(--primary);">Schleimy's Omnitool 4.2 (Cloud Edition)</h1>
 
 <div class="box" style="border-color: #10b981;">
     <h2 style="border-color: #10b981;">1. Scribd DocDownloader</h2>
@@ -44,8 +44,13 @@
     <div class="flex">
         <input type="text" id="mediaUrl" placeholder="Video oder Audio URL..." style="flex: 2;">
         <select id="mediaType" style="flex: 1;">
-            <option value="mp4">Video (Beste Qualität)</option>
+            <option value="mp4">Video (MP4)</option>
             <option value="mp3">Audio (MP3)</option>
+        </select>
+        <select id="mediaQuality" style="flex: 1;">
+            <option value="max">Beste Qualität</option>
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
         </select>
     </div>
     <button id="downloadBtn" onclick="downloadMedia()">Download Starten</button>
@@ -87,13 +92,11 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script>
-    // Theme Toggle
     function toggleTheme() {
         const root = document.documentElement;
         root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
     }
 
-    // 1. Scribd
     async function scrapeScribd() {
         const url = document.getElementById('scribdUrl').value;
         document.getElementById('scribdOutput').value = "Scraping läuft... (Kann bei Scribd etwas dauern)";
@@ -104,10 +107,11 @@
         } catch (e) { document.getElementById('scribdOutput').value = "Fehler beim Scraping."; }
     }
 
-    // 2. Media Download (Ohne Server-Belastung!)
+    // Geänderter Media Downloader (Redet jetzt über deinen Tunnel)
     async function downloadMedia() {
         const url = document.getElementById('mediaUrl').value;
         const type = document.getElementById('mediaType').value;
+        const quality = document.getElementById('mediaQuality').value;
         
         if (!url) return alert("Bitte eine URL eingeben!");
         
@@ -117,38 +121,31 @@
         btn.disabled = true;
 
         try {
-            // Cobalt API Anfrage
-            const res = await fetch('https://api.cobalt.tools/api/json', {
+            // Wir schicken die Daten an DEINEN eigenen Server unter /api/media
+            const res = await fetch('/api/media', {
                 method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    url: url,
-                    isAudioOnly: type === 'mp3'
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, type, quality })
             });
 
             const data = await res.json();
             
-            if (data.status === 'error') {
-                alert("Fehler: " + data.text);
+            if (data.error) {
+                alert("Fehler: " + data.error);
             } else if (data.url) {
-                // Öffnet den fertigen Download in einem neuen Tab
+                // Öffnet den vom API-Server generierten Download-Link im neuen Tab
                 window.open(data.url, '_blank');
             } else {
                 alert("Etwas ist schiefgelaufen. Versuche es nochmal.");
             }
         } catch (e) {
-            alert("Fehler beim Verbinden zur Download-API.");
+            alert("Konnte keine Verbindung zum Server herstellen.");
         } finally {
             btn.innerText = oldText;
             btn.disabled = false;
         }
     }
 
-    // 3. Paste
     async function createPaste() {
         const text = document.getElementById('pasteWrite').value;
         const password = document.getElementById('pastePass').value;
@@ -176,7 +173,6 @@
         Prism.highlightElement(codeBlock);
     }
 
-    // 4. Shortener & QR
     async function shortenUrl() {
         const url = document.getElementById('longUrl').value;
         const res = await fetch('/api/shorten', {
