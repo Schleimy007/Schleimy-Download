@@ -2,7 +2,7 @@
 <html lang="de" data-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <title>Schleimy Downloads tool</title>
+    <title>Schleimy Download Portal</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <style>
         :root[data-theme="dark"] { --bg: #0f0f0f; --surface: #1a1a1a; --text: #f3f4f6; --border: #334155; --primary: #3b82f6; }
@@ -26,35 +26,15 @@
         #qrResult { text-align: center; margin-top: 10px; }
         #qrResult img { max-width: 150px; border-radius: 8px; }
 
-        /* --- MODAL SYSTEM --- */
         .modal-overlay { 
-            display: none; 
-            position: fixed; 
-            z-index: 1000; 
-            left: 0; 
-            top: 0; 
-            width: 100%; 
-            height: 100%; 
-            background-color: rgba(0,0,0,0.6); 
-            backdrop-filter: blur(4px); 
-            animation: fadeIn 0.2s ease;
+            display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; 
+            background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); animation: fadeIn 0.2s ease;
         }
         .modal-box { 
-            background-color: var(--surface); 
-            margin: 15vh auto; 
-            padding: 2rem; 
-            border: 1px solid var(--border); 
-            border-radius: 12px; 
-            max-width: 400px; 
-            text-align: center; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
+            background-color: var(--surface); margin: 15vh auto; padding: 2rem; border: 1px solid var(--border); 
+            border-radius: 12px; max-width: 400px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
         }
-        .modal-text { 
-            margin-bottom: 1.5rem; 
-            font-size: 1.1rem; 
-            color: var(--text);
-            word-wrap: break-word;
-        }
+        .modal-text { margin-bottom: 1.5rem; font-size: 1.1rem; color: var(--text); white-space: pre-wrap; word-wrap: break-word; }
         .modal-btn { width: auto; padding: 8px 30px; font-size: 1rem; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
@@ -62,7 +42,7 @@
 <body>
 
 <button class="theme-switch" onclick="toggleTheme()">🌗 Mode</button>
-<h1 style="text-align: center; color: var(--primary);">Schleimy Downloads tool</h1>
+<h1 style="text-align: center; color: var(--primary);">Schleimy Download Portal</h1>
 
 <div class="box" style="border-color: #10b981;">
     <h2 style="border-color: #10b981;">1. Scribd DocDownloader</h2>
@@ -80,13 +60,12 @@
         <input type="text" id="mediaUrl" placeholder="Funktion deaktiviert..." style="flex: 2;" disabled>
         <select id="mediaType" style="flex: 1;" disabled>
             <option value="mp4">Video (MP4)</option>
-            <option value="mp3">Audio (MP3)</option>
         </select>
         <select id="mediaQuality" style="flex: 1;" disabled>
             <option value="max">Beste Qualität</option>
         </select>
     </div>
-    <button id="downloadBtn" disabled style="background: #ef4444;">Wartungsmodus</button>
+    <button disabled style="background: #ef4444;">Wartungsmodus</button>
 </div>
 
 <div class="box">
@@ -95,7 +74,7 @@
     <div class="grid-2">
         <input type="password" id="pastePass" placeholder="Passwort (Optional)">
         <label style="display: flex; align-items: center; gap: 5px;">
-            <input type="checkbox" id="pasteBurn" style="width:auto;"> Burn after reading
+            <input type="checkbox" id="pasteBurn" style="width:auto;"> Burn nach dem Lesen
         </label>
     </div>
     <button onclick="createPaste()">Paste Erstellen</button>
@@ -132,18 +111,26 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script>
+    let clipboardTemp = ""; // Zwischenspeicher für ID-Kopie
+
     function toggleTheme() {
         const root = document.documentElement;
         root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
     }
 
-    function showModal(msg) {
+    function showModal(msg, idToCopy = null) {
         document.getElementById('modalMessage').innerText = msg;
+        clipboardTemp = idToCopy; // Speichert die ID für den Klick auf "Verstanden"
         document.getElementById('customModal').style.display = 'block';
     }
 
     function closeModal() {
         document.getElementById('customModal').style.display = 'none';
+        // Auto-Kopie in die Zwischenablage!
+        if(clipboardTemp) {
+            navigator.clipboard.writeText(clipboardTemp).catch(()=>{});
+            clipboardTemp = null;
+        }
     }
 
     async function scrapeScribd() {
@@ -154,7 +141,6 @@
             const data = await res.json();
             document.getElementById('scribdOutput').value = `TITEL: ${data.title}\n\nINHALT:\n${data.text}`;
         } catch (e) { 
-            document.getElementById('scribdOutput').value = "Fehler beim Scraping."; 
             showModal("Fehler beim Scraping von Scribd.");
         }
     }
@@ -166,12 +152,23 @@
         
         if (!text) return showModal("Bitte Text für den Paste eingeben!");
 
-        const res = await fetch('/api/paste', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, password, isBurn })
-        });
-        const data = await res.json();
-        showModal(`Erfolgreich gespeichert!\nDeine Paste-ID lautet: ${data.id}`);
+        try {
+            const res = await fetch('/api/paste', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, password, isBurn })
+            });
+            const data = await res.json();
+            if(data.error) throw new Error(data.error);
+
+            // Löscht die Felder nach Erfolg
+            document.getElementById('pasteWrite').value = "";
+            document.getElementById('pastePass').value = "";
+            document.getElementById('pasteBurn').checked = false;
+
+            showModal(`Erfolgreich in der Datenbank gespeichert!\n\nDeine ID: ${data.id}\n\n(Die ID wird beim Klick auf "Verstanden" automatisch kopiert)`, data.id);
+        } catch (e) {
+            showModal("Fehler beim Speichern. Hast du die Firebase-Daten im Server eingetragen?");
+        }
     }
 
     async function readPaste() {
@@ -180,38 +177,51 @@
         
         if (!id) return showModal("Bitte eine Paste-ID eingeben!");
 
-        const res = await fetch('/api/paste/read', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, password })
-        });
-        const data = await res.json();
-        if (data.error) return showModal(data.error);
-        
-        const codeBlock = document.getElementById('pasteCodeBlock');
-        codeBlock.innerText = data.text;
-        Prism.highlightElement(codeBlock);
+        try {
+            const res = await fetch('/api/paste/read', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, password })
+            });
+            const data = await res.json();
+            
+            if (data.error) return showModal(data.error);
+            
+            const codeBlock = document.getElementById('pasteCodeBlock');
+            codeBlock.innerText = data.text;
+            Prism.highlightElement(codeBlock);
+        } catch(e) {
+            showModal("Fehler beim Abrufen aus der Datenbank.");
+        }
     }
 
     async function shortenUrl() {
         const url = document.getElementById('longUrl').value;
         if (!url) return showModal("Bitte einen Link eingeben!");
 
-        const res = await fetch('/api/shorten', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
-        });
-        const data = await res.json();
-        const shortUrl = window.location.origin + data.shortUrl;
-        document.getElementById('shortLinkResult').innerText = shortUrl;
-        document.getElementById('longUrl').value = shortUrl;
+        try {
+            const res = await fetch('/api/shorten', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+            const shortUrl = window.location.origin + data.shortUrl;
+            document.getElementById('shortLinkResult').innerText = shortUrl;
+            document.getElementById('longUrl').value = shortUrl;
+        } catch(e) {
+            showModal("Fehler beim Erstellen des Links.");
+        }
     }
 
     async function generateQR() {
         const data = document.getElementById('longUrl').value;
         if(!data) return showModal("Bitte erst einen Link eingeben!");
-        const res = await fetch(`/api/qr?data=${encodeURIComponent(data)}`);
-        const json = await res.json();
-        document.getElementById('qrResult').innerHTML = `<img src="${json.qr}" alt="QR">`;
+        try {
+            const res = await fetch(`/api/qr?data=${encodeURIComponent(data)}`);
+            const json = await res.json();
+            document.getElementById('qrResult').innerHTML = `<img src="${json.qr}" alt="QR">`;
+        } catch(e) {
+            showModal("Fehler beim QR-Generieren.");
+        }
     }
 </script>
 </body>
