@@ -111,7 +111,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script>
-    let clipboardTemp = ""; // Zwischenspeicher für ID-Kopie
+    let clipboardTemp = "";
 
     function toggleTheme() {
         const root = document.documentElement;
@@ -120,13 +120,12 @@
 
     function showModal(msg, idToCopy = null) {
         document.getElementById('modalMessage').innerText = msg;
-        clipboardTemp = idToCopy; // Speichert die ID für den Klick auf "Verstanden"
+        clipboardTemp = idToCopy;
         document.getElementById('customModal').style.display = 'block';
     }
 
     function closeModal() {
         document.getElementById('customModal').style.display = 'none';
-        // Auto-Kopie in die Zwischenablage!
         if(clipboardTemp) {
             navigator.clipboard.writeText(clipboardTemp).catch(()=>{});
             clipboardTemp = null;
@@ -135,7 +134,7 @@
 
     async function scrapeScribd() {
         const url = document.getElementById('scribdUrl').value;
-        document.getElementById('scribdOutput').value = "Scraping läuft... (Kann bei Scribd etwas dauern)";
+        document.getElementById('scribdOutput').value = "Scraping läuft...";
         try {
             const res = await fetch(`/api/scribd?url=${encodeURIComponent(url)}`);
             const data = await res.json();
@@ -157,17 +156,24 @@
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text, password, isBurn })
             });
+            
+            // NEU: Fehler brutal und ungeschönt abfangen!
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Vercel Server meldet Code ${res.status}: ${errText}`);
+            }
+
             const data = await res.json();
             if(data.error) throw new Error(data.error);
 
-            // Löscht die Felder nach Erfolg
             document.getElementById('pasteWrite').value = "";
             document.getElementById('pastePass').value = "";
             document.getElementById('pasteBurn').checked = false;
 
             showModal(`Erfolgreich in der Datenbank gespeichert!\n\nDeine ID: ${data.id}\n\n(Die ID wird beim Klick auf "Verstanden" automatisch kopiert)`, data.id);
         } catch (e) {
-            showModal("Fehler beim Speichern. Hast du die Firebase-Daten im Server eingetragen?");
+            // HIER landet jetzt der ECHTE Fehler von Vercel/Firebase!
+            showModal("EXAKTER FEHLER: \n" + e.message);
         }
     }
 
@@ -182,15 +188,20 @@
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id, password })
             });
-            const data = await res.json();
             
-            if (data.error) return showModal(data.error);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Vercel Server meldet Code ${res.status}: ${errText}`);
+            }
+
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
             
             const codeBlock = document.getElementById('pasteCodeBlock');
             codeBlock.innerText = data.text;
             Prism.highlightElement(codeBlock);
         } catch(e) {
-            showModal("Fehler beim Abrufen aus der Datenbank.");
+            showModal("EXAKTER FEHLER: \n" + e.message);
         }
     }
 
@@ -208,7 +219,7 @@
             document.getElementById('shortLinkResult').innerText = shortUrl;
             document.getElementById('longUrl').value = shortUrl;
         } catch(e) {
-            showModal("Fehler beim Erstellen des Links.");
+            showModal("Fehler beim Erstellen des Links: " + e.message);
         }
     }
 
