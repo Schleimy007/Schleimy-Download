@@ -157,7 +157,7 @@
         }
     }
 
-    async function downloadMedia() {
+   async function downloadMedia() {
         const url = document.getElementById('mediaUrl').value;
         const type = document.getElementById('mediaType').value;
         const quality = document.getElementById('mediaQuality').value;
@@ -169,49 +169,61 @@
         btn.innerText = "Lade... Bitte warten";
         btn.disabled = true;
 
-        showModal("Verbinde mit öffentlichen Servern... Dein eigener Server wird dafür absolut NICHT belastet!");
+        showModal("Verbinde mit Servern... (0% eigene Serverlast)");
 
-        // Liste von kostenlosen Community-Servern. Der Browser probiert sie nacheinander durch.
+        // Eine erweiterte Liste von Servern (inklusive ein paar neuerer)
         const apis = [
             'https://co.wuk.sh/api/json',
             'https://cobalt.qewertyy.dev/api/json',
-            'https://api.cobalt.tools/api/json'
+            'https://api.cobalt.tools/api/json',
+            'https://api.vkrdownloader.vercel.app/server?vkr=' // Alternativer Fallback-API-Stil
         ];
 
         let finalUrl = null;
 
+        // Versuche alle APIs unsichtbar im Hintergrund
         for (let api of apis) {
             try {
-                const res = await fetch(api, {
-                    method: 'POST',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        url: url,
-                        isAudioOnly: type === 'mp3',
-                        vQuality: quality
-                    })
-                });
+                // Manche APIs brauchen GET, Cobalt braucht POST. Wir versuchen den Standard-Cobalt-Weg.
+                if(api.includes('cobalt') || api.includes('wuk.sh')) {
+                    const res = await fetch(api, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            url: url,
+                            isAudioOnly: type === 'mp3',
+                            vQuality: quality
+                        })
+                    });
 
-                const data = await res.json();
-                
-                if (data.url) {
-                    finalUrl = data.url;
-                    break; // Erfolgreich! Schleife abbrechen.
+                    const data = await res.json();
+                    
+                    if (data.url) {
+                        finalUrl = data.url;
+                        break; // Erfolgreich! Schleife abbrechen.
+                    }
                 }
             } catch (e) {
-                // Fehler leise ignorieren und den nächsten Server in der Liste probieren
-                console.log("Server fehlgeschlagen, probiere den nächsten...");
+                // Leise ignorieren, nächster Server wird probiert
             }
         }
 
         if (finalUrl) {
-            closeModal(); // Schließt das Info-Modal
-            window.open(finalUrl, '_blank'); // Öffnet den Download
+            closeModal(); 
+            window.open(finalUrl, '_blank'); 
         } else {
-            showModal("Fehler: Alle öffentlichen Download-Server sind gerade überlastet oder blockiert. Bitte versuche es später noch einmal!");
+            // PLAN B: ULTIMATIVER FALLBACK
+            // Wenn alle APIs down sind, leiten wir den Nutzer zur offiziellen Web-Oberfläche weiter!
+            showModal("Hintergrund-Server sind überlastet. Leite zur offiziellen Fallback-Seite weiter...");
+            
+            setTimeout(() => {
+                closeModal();
+                // Öffnet das Cobalt-Webinterface mit bereits eingefügtem Link!
+                window.open(`https://cobalt.tools/?u=${encodeURIComponent(url)}`, '_blank');
+            }, 2500);
         }
 
         btn.innerText = oldText;
