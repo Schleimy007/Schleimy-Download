@@ -1,0 +1,16 @@
+{
+  "name": "schleimys-omnitool",
+  "version": "4.1.0",
+  "description": "The Ultimate Downloader, Pastebin & Scraper (0€ Cloud Edition)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "qrcode": "^1.5.4",
+    "uuid": "^9.0.1"
+  }
+}
