@@ -18,14 +18,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 // DEINE FIREBASE DATEN 
 // ==========================================
 const firebaseConfig = {
-    apiKey: "AIzaSyChyWkhBMP6kbAvkiHFJ36G_faHRI7Mbpg",
-    authDomain: "schleimy-download-portal.firebaseapp.com",
-    projectId: "schleimy-download-portal",
-    storageBucket: "schleimy-download-portal.firebasestorage.app",
-    messagingSenderId: "671408090473",
-    appId: "1:671408090473:web:6231e66e93f4c160d861f8",
-    measurementId: "G-W81SG1B28C"
+
+  apiKey: "AIzaSyChyWkhBMP6kbAvkiHFJ36G_faHRI7Mbpg",
+
+  authDomain: "schleimy-download-portal.firebaseapp.com",
+
+  databaseURL: "https://schleimy-download-portal-default-rtdb.europe-west1.firebasedatabase.app",
+
+  projectId: "schleimy-download-portal",
+
+  storageBucket: "schleimy-download-portal.firebasestorage.app",
+
+  messagingSenderId: "671408090473",
+
+  appId: "1:671408090473:web:6231e66e93f4c160d861f8",
+
+  measurementId: "G-W81SG1B28C"
+
 };
+
 
 // Initialisiert Firebase im "Lite" Modus (Perfekt für Vercel)
 const firebaseApp = initializeApp(firebaseConfig);
